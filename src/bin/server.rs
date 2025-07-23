@@ -1,5 +1,6 @@
 use iot_gateway::{
     create_client_registry, get_client_count, register_client, unregister_client,
+    update_client_activity, get_inactive_clients,
     ClientMessage, ClientRegistry, MessageType, create_server_config,
 };
 use std::sync::Arc;
@@ -109,6 +110,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         monitor_server_stats(monitor_registry, monitor_metrics).await;
     });
     
+    // Start client timeout task
+    let timeout_registry = client_registry.clone();
+    tokio::spawn(async move {
+        client_timeout_task(timeout_registry).await;
+    });
+    
     // Accept connections
     loop {
         match listener.accept().await {
@@ -156,8 +163,9 @@ async fn handle_client(
     let client_id = message.client_id;
     info!("Client {} connected with TLS", client_id);
     
-    // Register client
+    // Register client and update activity
     register_client(&registry, client_id).await;
+    update_client_activity(&registry, client_id).await;
     
     // Update peak clients
     let current_clients = get_client_count(&registry).await;
@@ -187,6 +195,9 @@ async fn handle_client(
             }
             Ok(_) => {
                 metrics.record_message(line.len());
+                // Update client activity for any message received
+                update_client_activity(&registry, client_id).await;
+                
                 match serde_json::from_str::<ClientMessage>(line.trim()) {
                     Ok(msg) => {
                         match msg.message_type {
@@ -195,9 +206,8 @@ async fn handle_client(
                                 break;
                             }
                             MessageType::Heartbeat => {
-                                // Update heartbeat timestamp
-                                // For now, just log it
-                                info!("Heartbeat from client {}", client_id);
+                                // Keepalive received
+                                info!("Keepalive from client {}", client_id);
                             }
                             MessageType::Data => {
                                 info!("Data from client {}: {}", client_id, msg.payload);
@@ -238,59 +248,35 @@ async fn monitor_server_stats(registry: ClientRegistry, metrics: ServerMetricsRe
         };
         
         // Get metrics
-        let uptime = metrics.get_uptime();
-        let total_connections = metrics.total_connections.load(Ordering::Relaxed);
-        let total_messages = metrics.total_messages.load(Ordering::Relaxed);
-        let total_bytes_rx = metrics.total_bytes_received.load(Ordering::Relaxed);
-        let total_bytes_tx = metrics.total_bytes_sent.load(Ordering::Relaxed);
         let peak_clients = metrics.peak_clients.load(Ordering::Relaxed);
         let conn_rate = metrics.connections_last_second.load(Ordering::Relaxed);
-        let msg_rate = metrics.messages_last_second.load(Ordering::Relaxed);
         
-        // Calculate throughput (bytes per second)
-        let uptime_secs = uptime.as_secs() as f64;
-        let rx_throughput = if uptime_secs > 0.0 { total_bytes_rx as f64 / uptime_secs } else { 0.0 };
-        let tx_throughput = if uptime_secs > 0.0 { total_bytes_tx as f64 / uptime_secs } else { 0.0 };
-        
-        // Format uptime
-        let uptime_str = format_duration(uptime);
-        
-        info!(
-            "📊 === ENHANCED SERVER STATS ===\n\
-            🔗 Clients: {} (Peak: {}) | 📈 Conn Rate: {}/s | 💾 Memory: {:.1} MB\n\
-            📨 Messages: {} ({}/s) | ⏱️ Uptime: {} | 🔐 TLS: Enabled\n\
-            📡 RX: {:.1} KB ({:.1} B/s) | 📤 TX: {:.1} KB ({:.1} B/s) | 🔗 Total Conn: {}",
-            client_count,
-            peak_clients,
-            conn_rate,
-            memory_mb,
-            total_messages,
-            msg_rate,
-            uptime_str,
-            total_bytes_rx as f64 / 1024.0,
-            rx_throughput,
-            total_bytes_tx as f64 / 1024.0,
-            tx_throughput,
-            total_connections
-        );
+        info!("[stats] clients: {} | peak: {} | memory: {:.1} MB | conn_rate: {}/s", 
+              client_count, peak_clients, memory_mb, conn_rate);
         
         // Reset per-second counters
         metrics.reset_per_second_counters();
     }
 }
 
-fn format_duration(duration: Duration) -> String {
-    let total_seconds = duration.as_secs();
-    let hours = total_seconds / 3600;
-    let minutes = (total_seconds % 3600) / 60;
-    let seconds = total_seconds % 60;
+
+
+async fn client_timeout_task(registry: ClientRegistry) {
+    let mut interval = interval(Duration::from_secs(10)); // Check every 10 seconds
     
-    if hours > 0 {
-        format!("{}h{}m{}s", hours, minutes, seconds)
-    } else if minutes > 0 {
-        format!("{}m{}s", minutes, seconds)
-    } else {
-        format!("{}s", seconds)
+    loop {
+        interval.tick().await;
+        
+        let inactive_clients = get_inactive_clients(&registry, 30).await; // 30 second timeout
+        
+        if !inactive_clients.is_empty() {
+            info!("Disconnecting {} inactive clients", inactive_clients.len());
+            
+            for client_id in inactive_clients {
+                info!("Client {} timed out - removing from registry", client_id);
+                unregister_client(&registry, client_id).await;
+            }
+        }
     }
 }
 

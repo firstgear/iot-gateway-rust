@@ -306,31 +306,71 @@ where
         s.total_bytes_received += line.len();
     }).await;
     
-    // Send test messages
-    for i in 0..messages_to_send {
-        // Check if test duration has elapsed
-        if test_start_time.elapsed() >= test_duration {
+    // Track timing for keepalives and data messages
+    let mut last_keepalive = Instant::now();
+    let mut data_sent = 0;
+    let mut last_data = Instant::now();
+    let test_end_time = test_start_time + test_duration;
+    
+    // Send initial data messages and keepalives during the test
+    loop {
+        let now = Instant::now();
+        
+        // Check if test duration elapsed
+        if now >= test_end_time {
             break;
         }
         
-        let data_msg = ClientMessage {
-            client_id: uuid,
-            message_type: MessageType::Data,
-            payload: format!("Perf test data #{}", i + 1),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_secs(),
-        };
+        // Send keepalive every 10 seconds
+        if now.duration_since(last_keepalive) >= Duration::from_secs(10) {
+            let keepalive_msg = ClientMessage {
+                client_id: uuid,
+                message_type: MessageType::Heartbeat,
+                payload: "keepalive".to_string(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            };
+            
+            let keepalive_json = serde_json::to_string(&keepalive_msg)? + "\n";
+            if writer.write_all(keepalive_json.as_bytes()).await.is_err() {
+                break;
+            }
+            update_stats(stats, |s| {
+                s.messages_sent += 1;
+                s.total_bytes_sent += keepalive_json.len();
+            }).await;
+            
+            last_keepalive = now;
+        }
         
-        let data_json = serde_json::to_string(&data_msg)? + "\n";
-        writer.write_all(data_json.as_bytes()).await?;
-        update_stats(stats, |s| {
-            s.messages_sent += 1;
-            s.total_bytes_sent += data_json.len();
-        }).await;
+        // Send data message every 5 seconds (if we still have messages to send)
+        if data_sent < messages_to_send && now.duration_since(last_data) >= Duration::from_secs(5) {
+            let data_msg = ClientMessage {
+                client_id: uuid,
+                message_type: MessageType::Data,
+                payload: format!("Perf test data #{}", data_sent + 1),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs(),
+            };
+            
+            let data_json = serde_json::to_string(&data_msg)? + "\n";
+            if writer.write_all(data_json.as_bytes()).await.is_err() {
+                break;
+            }
+            update_stats(stats, |s| {
+                s.messages_sent += 1;
+                s.total_bytes_sent += data_json.len();
+            }).await;
+            
+            data_sent += 1;
+            last_data = now;
+        }
         
-        // Small delay between messages
-        sleep(Duration::from_millis(50)).await;
+        // Small delay to prevent busy waiting
+        sleep(Duration::from_millis(500)).await;
     }
     
     // Send disconnect message
@@ -344,7 +384,7 @@ where
     };
     
     let disconnect_json = serde_json::to_string(&disconnect_msg)? + "\n";
-    writer.write_all(disconnect_json.as_bytes()).await?;
+    let _ = writer.write_all(disconnect_json.as_bytes()).await;
     update_stats(stats, |s| s.total_bytes_sent += disconnect_json.len()).await;
     
     Ok(())

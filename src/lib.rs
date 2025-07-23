@@ -29,6 +29,7 @@ pub struct ClientInfo {
     pub id: Uuid,
     pub connected_at: std::time::Instant,
     pub last_heartbeat: std::time::Instant,
+    pub last_activity: std::time::Instant,
 }
 
 pub type ClientRegistry = Arc<RwLock<HashMap<Uuid, ClientInfo>>>;
@@ -44,6 +45,7 @@ pub async fn register_client(registry: &ClientRegistry, client_id: Uuid) {
         id: client_id,
         connected_at: now,
         last_heartbeat: now,
+        last_activity: now,
     });
 }
 
@@ -55,6 +57,28 @@ pub async fn unregister_client(registry: &ClientRegistry, client_id: Uuid) {
 pub async fn get_client_count(registry: &ClientRegistry) -> usize {
     let clients = registry.read().await;
     clients.len()
+}
+
+pub async fn update_client_activity(registry: &ClientRegistry, client_id: Uuid) {
+    let mut clients = registry.write().await;
+    if let Some(client_info) = clients.get_mut(&client_id) {
+        client_info.last_activity = std::time::Instant::now();
+        if matches!(client_info.last_activity, _) {
+            client_info.last_heartbeat = client_info.last_activity;
+        }
+    }
+}
+
+pub async fn get_inactive_clients(registry: &ClientRegistry, timeout_secs: u64) -> Vec<Uuid> {
+    let clients = registry.read().await;
+    let now = std::time::Instant::now();
+    let timeout_duration = std::time::Duration::from_secs(timeout_secs);
+    
+    clients
+        .values()
+        .filter(|client| now.duration_since(client.last_activity) > timeout_duration)
+        .map(|client| client.id)
+        .collect()
 }
 
 pub fn load_certs(path: &str) -> Result<Vec<Certificate>, Box<dyn std::error::Error>> {

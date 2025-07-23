@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn send_heartbeats(tx: tokio::sync::mpsc::UnboundedSender<ClientMessage>, client_id: Uuid) {
-    let mut interval = interval(Duration::from_secs(30));
+    let mut interval = interval(Duration::from_secs(10));
     
     loop {
         interval.tick().await;
@@ -116,7 +116,7 @@ async fn send_heartbeats(tx: tokio::sync::mpsc::UnboundedSender<ClientMessage>, 
         let heartbeat = ClientMessage {
             client_id,
             message_type: MessageType::Heartbeat,
-            payload: "heartbeat".to_string(),
+            payload: "keepalive".to_string(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
