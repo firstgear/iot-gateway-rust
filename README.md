@@ -1,6 +1,6 @@
 # 🚀 IoT Gateway - High-Performance Rust Implementation
 
-A production-ready IoT Gateway built in Rust featuring TLS encryption, persistent connections, UUID client identification, real-time monitoring, and exceptional scalability supporting up to 10,000 concurrent connections.
+IoT Gateway built in Rust featuring TLS encryption, persistent connections, UUID client identification, real-time monitoring, and exceptional scalability supporting up to 10,000 concurrent connections.
 
 ## ✨ Features
 
