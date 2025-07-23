@@ -95,7 +95,7 @@ pub fn create_server_config(
 }
 
 pub fn create_client_config() -> Result<ClientConfig, Box<dyn std::error::Error>> {
-    let mut root_cert_store = rustls::RootCertStore::empty();
+    let _root_cert_store = rustls::RootCertStore::empty();
     
     // For development with self-signed certificates, we'll skip certificate verification
     // In production, you would add proper CA certificates here
