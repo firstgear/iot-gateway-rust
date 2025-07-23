@@ -281,3 +281,118 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Performance testing inspired by modern load testing tools
 - UUID generation via [uuid](https://crates.io/crates/uuid) crate
 
+t, peak reached, connection rate per second
+- **Message Processing**: Total messages, processing rate, average throughput
+- **Memory Usage**: Real-time RSS memory consumption tracking
+- **Network Traffic**: RX/TX bytes, bandwidth utilization, total data transferred
+- **Performance**: Connection times, error rates, uptime tracking
+- **System Health**: TLS status, server state, operational metrics
+
+#### 🔧 Monitoring Configuration
+```rust
+// The monitoring system runs automatically with 1-second intervals
+// All metrics are thread-safe using atomic operations
+// No configuration required - works out of the box!
+
+// Metrics are logged with structured format:
+// 📊 === ENHANCED SERVER STATS ===
+// 🔗 Clients: {current} (Peak: {peak}) | 📈 Conn Rate: {rate}/s | 💾 Memory: {mem} MB
+// 📨 Messages: {total} ({rate}/s) | ⏱️ Uptime: {time} | 🔐 TLS: Enabled
+// 📡 RX: {rx_kb} KB ({rx_rate} B/s) | 📤 TX: {tx_kb} KB ({tx_rate} B/s) | 🔗 Total Conn: {total}
+```
+
+#### 📈 Integration Examples
+```bash
+# Monitor with grep for specific metrics
+cargo run --bin server | grep "Clients:"
+
+# Track connection rates
+cargo run --bin server | grep "Conn Rate:"
+
+# Monitor memory usage trends
+cargo run --bin server | grep "Memory:"
+
+# Full monitoring dashboard
+cargo run --bin server | grep "ENHANCED SERVER STATS" -A 3
+```
+
+## 🔧 Configuration
+
+### Server Configuration
+
+Modify `src/bin/server.rs` for custom settings:
+
+```rust
+let bind_addr = "127.0.0.1:8080";  // Change listening address
+let cert_path = "certs/cert.pem";  // Certificate path
+let key_path = "certs/key.pem";    // Private key path
+
+// Monitoring interval is set to 1 second for real-time updates
+// Can be modified in monitor_server_stats() function
+```
+
+### Client Configuration
+
+Customize client behavior in `src/bin/client.rs`:
+
+```rust
+let server_addr = "127.0.0.1:8080";     // Server address
+let heartbeat_interval = Duration::from_secs(30);  // Heartbeat frequency
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **TLS Handshake Failed**
+   ```
+   Error: TLS handshake failed: invalid certificate
+   ```
+   **Solution**: Regenerate certificates or update the server name in client code
+
+2. **Connection Refused**
+   ```
+   Error: Connection refused (os error 61)
+   ```
+   **Solution**: Ensure the server is running on the correct port
+
+3. **Certificate Errors**
+   ```
+   Error: No such file or directory: certs/cert.pem
+   ```
+   **Solution**: Generate SSL certificates as shown in the installation steps
+
+4. **High Memory Usage**
+   ```
+   📊 Memory: 250.5 MB (increasing trend)
+   ```
+   **Solution**: Monitor client connection patterns, check for memory leaks in client handling
+
+### Debug Mode
+
+Enable detailed logging:
+
+```bash
+RUST_LOG=debug cargo run --bin server
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built with [Tokio](https://tokio.rs/) for async runtime
+- TLS implementation using [rustls](https://github.com/rustls/rustls)
+- Performance testing inspired by modern load testing tools
+- UUID generation via [uuid](https://crates.io/crates/uuid) crate
+- Enhanced monitoring system using atomic operations for thread-safe metrics
+
